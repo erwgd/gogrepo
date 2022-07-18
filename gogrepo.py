@@ -363,6 +363,7 @@ def fetch_file_info(d, fetch_md5):
         # fetch file md5
         if fetch_md5:
             if os.path.splitext(page.geturl())[1].lower() not in SKIP_MD5_FILE_EXT:
+<<<<<<< HEAD
                 tmp_md5_url = "%s.xml" %page.geturl()
                 for i in range(HTTP_MD5_RETRY_COUNT):
                     try:
@@ -394,6 +395,20 @@ def fetch_file_info(d, fetch_md5):
                         else:
                             warn('xml parsing error occurred trying to get md5 data for {}, retrying...'.format(d.name))
                             time.sleep(HTTP_RETRY_DELAY)
+=======
+                tmp_md5_url = page.geturl() + '.xml'
+                try:
+                    with request(tmp_md5_url) as page:
+                        shelf_etree = xml.etree.ElementTree.parse(page).getroot()
+                        d.md5 = shelf_etree.attrib['md5']
+                except HTTPError as e:
+                    if e.code == 404:
+                        warn("no md5 data found for {}".format(d.name))
+                    else:
+                        raise
+                except xml.etree.ElementTree.ParseError:
+                    warn('xml parsing error occurred trying to get md5 data for {}'.format(d.name))
+>>>>>>> 03a88ec (Fix md5 .xml URL due to server changes by GOG)
 
 
 def filter_downloads(out_list, downloads_list, lang_list, os_list):
