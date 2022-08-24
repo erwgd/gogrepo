@@ -364,6 +364,7 @@ def fetch_file_info(d, fetch_md5):
         if fetch_md5:
             if os.path.splitext(page.geturl())[1].lower() not in SKIP_MD5_FILE_EXT:
 <<<<<<< HEAD
+<<<<<<< HEAD
                 tmp_md5_url = "%s.xml" %page.geturl()
                 for i in range(HTTP_MD5_RETRY_COUNT):
                     try:
@@ -396,6 +397,8 @@ def fetch_file_info(d, fetch_md5):
                             warn('xml parsing error occurred trying to get md5 data for {}, retrying...'.format(d.name))
                             time.sleep(HTTP_RETRY_DELAY)
 =======
+=======
+>>>>>>> 03a88ecddd9d8b8befdb07115b84ff5f67ec3b60
                 tmp_md5_url = page.geturl() + '.xml'
                 try:
                     with request(tmp_md5_url) as page:
