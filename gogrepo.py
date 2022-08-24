@@ -28,28 +28,26 @@ import io
 import datetime
 import shutil
 import socket
-import gzip
 import xml.etree.ElementTree
-import re
 
 # python 2 / 3 imports
 try:
     # python 2
     from Queue import Queue
     import cookielib as cookiejar
-    from httplib import BadStatusLine, IncompleteRead
+    from httplib import BadStatusLine
     from urlparse import urlparse
     from urllib import urlencode, unquote
-    from urllib2 import HTTPError, URLError, HTTPCookieProcessor, build_opener, install_opener, urlopen, Request
+    from urllib2 import HTTPError, URLError, HTTPCookieProcessor, build_opener, Request
     from itertools import izip_longest as zip_longest
     from StringIO import StringIO
 except ImportError:
     # python 3
     from queue import Queue
     import http.cookiejar as cookiejar
-    from http.client import BadStatusLine, IncompleteRead
+    from http.client import BadStatusLine
     from urllib.parse import urlparse, urlencode, unquote
-    from urllib.request import HTTPCookieProcessor, HTTPError, URLError, build_opener, install_opener, urlopen, Request
+    from urllib.request import HTTPCookieProcessor, HTTPError, URLError, build_opener, Request
     from itertools import zip_longest
     from io import StringIO
 
@@ -110,7 +108,10 @@ HTTP_RETRY_DELAY = 5   # in seconds
 HTTP_RETRY_COUNT = 3
 HTTP_GAME_DOWNLOADER_THREADS = 4
 HTTP_PERM_ERRORCODES = (404, 403, 503)
-HTTP_MD5_RETRY_COUNT = 10
+
+# Save manifest data for these os and lang combinations
+DEFAULT_OS_LIST = ['windows']
+DEFAULT_LANG_LIST = ['en']
 
 # These file types don't have md5 data from GOG
 SKIP_MD5_FILE_EXT = ['.txt', '.zip']
@@ -147,10 +148,6 @@ LANG_TABLE = {'en': u'English',   # English
 VALID_OS_TYPES = ['windows', 'linux', 'mac']
 VALID_LANG_TYPES = list(LANG_TABLE.keys())
 
-# Save manifest data for these os and lang combinations
-DEFAULT_OS_LIST = VALID_OS_TYPES
-DEFAULT_LANG_LIST = VALID_LANG_TYPES
-
 ORPHAN_DIR_NAME = '!orphaned'
 ORPHAN_DIR_EXCLUDE_LIST = [ORPHAN_DIR_NAME, '!misc']
 ORPHAN_FILE_EXCLUDE_LIST = [INFO_FILENAME, SERIAL_FILENAME]
@@ -161,9 +158,6 @@ def request(url, args=None, byte_range=None, retries=HTTP_RETRY_COUNT, delay=HTT
     _retry = False
     time.sleep(delay)
 
-    install_opener(opener)
-    page = None
-
     try:
         if args is not None:
             enc_args = urlencode(args)
@@ -173,7 +167,7 @@ def request(url, args=None, byte_range=None, retries=HTTP_RETRY_COUNT, delay=HTT
         req = Request(url, data=enc_args)
         if byte_range is not None:
             req.add_header('Range', 'bytes=%d-%d' % byte_range)
-        page = urlopen(req, timeout=30)
+        page = opener.open(req)
     except (HTTPError, URLError, socket.error, BadStatusLine) as e:
         if isinstance(e, HTTPError):
             if e.code in HTTP_PERM_ERRORCODES:  # do not retry these HTTP codes
@@ -363,42 +357,6 @@ def fetch_file_info(d, fetch_md5):
         # fetch file md5
         if fetch_md5:
             if os.path.splitext(page.geturl())[1].lower() not in SKIP_MD5_FILE_EXT:
-<<<<<<< HEAD
-<<<<<<< HEAD
-                tmp_md5_url = "%s.xml" %page.geturl()
-                for i in range(HTTP_MD5_RETRY_COUNT):
-                    try:
-                        urls = [tmp_md5_url, re.sub(r"^https", "http", tmp_md5_url), tmp_md5_url.replace('%28', '(').replace('%29', ')')]
-                        for url in urls:
-                            with request(url) as page:
-                                try:
-                                    body = page.read()
-                                except IncompleteRead as e:
-                                    continue
-
-                                try:
-                                    shelf_etree = xml.etree.ElementTree.fromstring(gzip.decompress(body))
-                                except gzip.BadGzipFile:
-                                    shelf_etree = xml.etree.ElementTree.fromstring(body)
-
-                                d.md5 = shelf_etree.attrib['md5']
-                                info('successfully found md5 %s for %s' % (d.md5, d.name))
-                                return
-
-                    except HTTPError as e:
-                        if e.code == 404:
-                            warn("no md5 data found for {}".format(d.name))
-                        else:
-                            raise
-                    except xml.etree.ElementTree.ParseError:
-                        if i == HTTP_MD5_RETRY_COUNT:
-                            warn('xml parsing error occurred trying to get md5 data for {}, giving up'.format(d.name))
-                        else:
-                            warn('xml parsing error occurred trying to get md5 data for {}, retrying...'.format(d.name))
-                            time.sleep(HTTP_RETRY_DELAY)
-=======
-=======
->>>>>>> 03a88ecddd9d8b8befdb07115b84ff5f67ec3b60
                 tmp_md5_url = page.geturl() + '.xml'
                 try:
                     with request(tmp_md5_url) as page:
@@ -411,7 +369,6 @@ def fetch_file_info(d, fetch_md5):
                         raise
                 except xml.etree.ElementTree.ParseError:
                     warn('xml parsing error occurred trying to get md5 data for {}'.format(d.name))
->>>>>>> 03a88ec (Fix md5 .xml URL due to server changes by GOG)
 
 
 def filter_downloads(out_list, downloads_list, lang_list, os_list):
@@ -508,7 +465,6 @@ def process_argv(argv):
     g1.add_argument('-dryrun', action='store_true', help='display, but skip downloading of any files')
     g1.add_argument('-skipextras', action='store_true', help='skip downloading of any GOG extra files')
     g1.add_argument('-skipgames', action='store_true', help='skip downloading of any GOG game files')
-    g1.add_argument('-skippatches', action='store_true', help='skip downloading of any game patches')
     g1.add_argument('-id', action='store', help='id of the game in the manifest to download')
     g1.add_argument('-wait', action='store', type=float,
                     help='wait this long in hours before starting', default=0.0)  # sleep in hr
@@ -815,7 +771,7 @@ def cmd_import(src_dir, dest_dir):
             shutil.copy(f, dest_file)
 
 
-def cmd_download(savedir, skipextras, skipgames, skippatches, skipids, dryrun, id):
+def cmd_download(savedir, skipextras, skipgames, skipids, dryrun, id):
     sizes, rates, errors = {}, {}, {}
     work = Queue()  # build a list of work items
 
@@ -825,21 +781,10 @@ def cmd_download(savedir, skipextras, skipgames, skippatches, skipids, dryrun, i
     work_dict = dict()
 
     # util
-    def kibs(b):
-        return '%.1fKB' % (b / float(1024))
     def megs(b):
         return '%.1fMB' % (b / float(1024**2))
     def gigs(b):
         return '%.2fGB' % (b / float(1024**3))
-    def auto_size(b):
-        if b > 1024**3:
-            return gigs(b)
-        elif b > 1024**2:
-            return megs(b)
-        elif b > 1024:
-            return kibs(b)
-        else:
-            return '%dB' % (b)
 
     if id:
         id_found = False
@@ -870,9 +815,6 @@ def cmd_download(savedir, skipextras, skipgames, skippatches, skipids, dryrun, i
 
         if skipgames:
             item.downloads = []
-
-        if skippatches:
-            item.downloads = [d for d in item.downloads if not d["name"].startswith("patch_")]
 
         # Generate and save a game info text file
         if not dryrun:
@@ -938,7 +880,7 @@ def cmd_download(savedir, skipextras, skipgames, skippatches, skipids, dryrun, i
         work.put(work_dict[work_item])
 
     if dryrun:
-        info("{} left to download".format(auto_size(sum(sizes.values()))))
+        info("{} left to download".format(gigs(sum(sizes.values()))))
         return  # bail, as below just kicks off the actual downloading
 
     info('-'*60)
@@ -1001,10 +943,10 @@ def cmd_download(savedir, skipextras, skipgames, skippatches, skipids, dryrun, i
                     szs, ts = flows.get(tid, (0, 0))
                     flows[tid] = sz + szs, t + ts
                 bps = sum(szs/ts for szs, ts in list(flows.values()) if ts > 0)
-                info('%10s %s/s %2dx  %s' % \
-                    (auto_size(sizes[path]), auto_size(bps), len(flows), "%s/%s" % (os.path.basename(os.path.split(path)[0]), os.path.split(path)[1])))
+                info('%10s %8.1fMB/s %2dx  %s' % \
+                    (megs(sizes[path]), bps / 1024.0**2, len(flows), "%s/%s" % (os.path.basename(os.path.split(path)[0]), os.path.split(path)[1])))
             if len(rates) != 0:  # only update if there's change
-                info('%s remaining' % auto_size(left))
+                info('%s remaining' % gigs(left))
             rates.clear()
 
     # process work items with a thread pool
@@ -1205,7 +1147,7 @@ def main(args):
         if args.wait > 0.0:
             info('sleeping for %.2fhr...' % args.wait)
             time.sleep(args.wait * 60 * 60)
-        cmd_download(args.savedir, args.skipextras, args.skipgames, args.skippatches, args.skipids, args.dryrun, args.id)
+        cmd_download(args.savedir, args.skipextras, args.skipgames, args.skipids, args.dryrun, args.id)
     elif args.cmd == 'import':
         cmd_import(args.src_dir, args.dest_dir)
     elif args.cmd == 'verify':
